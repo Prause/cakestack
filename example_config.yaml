@@ -1,0 +1,14 @@
+#canvas:
+#  git: git@erik.zankt.net:canvas
+
+#remote-control:
+#  git: https://github.com/Prause/pi-launchpad.git
+#  entry: python3 server.py --port 8080 --config $CONF_DIR/launchpad/conf.json
+
+test:
+    entry: /usr/bin/env bash -c 'date; while true ; do sleep 3 ; echo foo ; done'
+    auto: 1
+
+vocab:
+    entry: ./randomVocab
+    dir: $HOME/nvir/bin/tools/
