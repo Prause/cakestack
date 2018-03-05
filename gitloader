@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+
+import os
+import cake
+from git import Repo
+import time
+
+if __name__ == "__main__":
+    conf = cake.read_config()
+
+    for tag, tag_conf in conf.items():
+        if 'git' in tag_conf:
+
+            # gitloader creates a 'repo' directory in the run-dir:
+            repo_dir = os.path.expandvars( os.path.join(cake.DEFAULT_RUN_DIR, tag, 'repo') )
+
+            # directory 'cloned-source' -> that's regularly pulled
+            source_dir = os.path.join(repo_dir, 'cloned_source')
+            if not os.path.isdir( source_dir ):
+                print( "Cloning {} from {}".format( tag, tag_conf['git'] ) )
+                Repo.clone_from( tag_conf['git'], source_dir )
+            repo = Repo( source_dir )
+            repo.remotes[0].pull()
+
+            # directories [git-hash] -> latest will be the working dir
+            commit_hash = repo.head.commit.hexsha
+            commit_dir = os.path.join( repo_dir, commit_hash )
+            if not os.path.isdir( commit_dir ):
+                print( repo.index )
+                repo.index.checkout( prefix= commit_dir )
+
+            # file 'latest-rev' -> latest revision's hash , or should this be the "history" ?
+            with open( os.path.join( repo_dir, 'latest' ), 'w' ) as f:
+                print( commit_hash, file=f )
+
