@@ -75,8 +75,28 @@ def stop_tag( tag, conf ):
     return psutil.wait_procs(procs, timeout=1)
 
 def start_tag( tag, conf ):
+    if "entry" not in conf[tag]:
+        print( "No entry point defined:", tag )
+        return
+
     if "dir" in conf[tag]:
         start_command(tag, conf[tag]["entry"], working_dir=conf[tag].get("dir"))
+
+    elif "git" in conf[tag]:
+        repo_dir = os.path.expandvars( os.path.join(DEFAULT_RUN_DIR, tag, 'repo') )
+        latest_file = os.path.join( repo_dir, 'latest' )
+        if not os.path.isfile(latest_file):
+            print( "No latest commit hash found, skipping:", tag )
+            return
+
+        with open( latest_file ) as f:
+            commit_hash = f.readline().strip()
+            w_dir = os.path.join( repo_dir, commit_hash )
+            if os.path.isdir(w_dir):
+                start_command(tag, conf[tag]["entry"], working_dir=w_dir)
+            else:
+                print( "No commit dir found, skipping:", tag )
+
     else:
         start_command(tag, conf[tag]["entry"])
 
