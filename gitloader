@@ -6,13 +6,14 @@ from git import Repo
 import time
 
 if __name__ == "__main__":
-    conf = cake.read_config()
+    conf = cake.Service.read_config()
 
     for tag, tag_conf in conf.items():
         if 'git' in tag_conf:
+            # TODO use Service(tag) instead
 
             # gitloader creates a 'repo' directory in the run-dir:
-            repo_dir = os.path.expandvars( os.path.join(cake.DEFAULT_RUN_DIR, tag, 'repo') )
+            repo_dir = os.path.expandvars( os.path.join(cake.Service.DEFAULT_RUN_DIR, tag, 'repo') )
 
             # directory 'cloned-source' -> that's regularly pulled
             source_dir = os.path.join(repo_dir, 'cloned_source')

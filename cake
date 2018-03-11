@@ -29,7 +29,8 @@ def get_tags( args, conf ):
 def state( args, conf ):
     tags = get_tags( args, conf )
     for tag in tags:
-        procs = cake.get_procs( tag )
+        service = cake.Service(tag)
+        procs = service.get_procs()
         # "$tag ($PID): $cmd ($dir) - $running"
         # datetime.datetime.fromtimestamp(p.create_time()).strftime("%Y-%m-%d %H:%M:%S")
         print( tag )
@@ -40,18 +41,19 @@ def state( args, conf ):
 def stop( args, conf ):
     tags = get_tags_from_args( args, conf )
     for tag in tags:
-        print( cake.stop_tag( tag, conf ) )
+        print( cake.Service(tag).stop() )
 
 
 def start( args, conf ):
     tags = get_tags_from_args( args, conf )
 
     for tag in tags:
-        if not cake.get_procs(tag):
-            cake.start_tag( tag, conf )
+        service = cake.Service(tag)
+        if not service.running():
+            service.start()
 
 
-def logs( args, conf, run_dir=cake.DEFAULT_RUN_DIR ):
+def logs( args, conf, run_dir=cake.Service.DEFAULT_RUN_DIR ):
     tags = get_tags( args, conf )
     for tag in tags:
         out_file = os.path.expandvars( os.path.join(run_dir, tag, "out.log") )
@@ -68,7 +70,7 @@ def logs( args, conf, run_dir=cake.DEFAULT_RUN_DIR ):
 
 if __name__ == "__main__":
     args = get_args()
-    conf = cake.read_config()
+    conf = cake.Service.read_config()
 
     if(args.action == "start"):
         start(args, conf)

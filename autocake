@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 
-CAKESTACK_DIR='$HOME/.cakestack'
-
 import cake
 
 if __name__ == "__main__":
-    conf = cake.read_config()
+    conf = cake.Service.read_config()
     for tag in conf.keys():
         if "auto" in conf[tag]:
-            if not cake.get_procs(tag):
-                cake.start_tag(tag, conf)
+            service = cake.Service(tag)
+            if not service.running():
+                service.start()
 
