@@ -8,5 +8,10 @@ if __name__ == "__main__":
         if "auto" in conf[tag]:
             service = cake.Service(tag)
             if not service.running():
+                print("Not running, starting:", tag)
+                service.start()
+            elif not service.is_up_to_date():
+                print("Updates, restarting:", tag)
+                service.stop()
                 service.start()
 

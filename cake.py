@@ -5,6 +5,7 @@ import datetime
 import signal
 import psutil
 import yaml
+import json
 import subprocess
 
 class Service:
@@ -106,12 +107,21 @@ class Service:
         procs = self.get_procs()
         for p in procs:
             p.send_signal(signal.SIGTERM)
-        return psutil.wait_procs(procs, timeout=1)
+        return psutil.wait_procs(procs, timeout=180)
 
 
     @with_conf
     def is_up_to_date(self):
         ## checks whether currently running version is up to date with config
+        proc_file = os.path.expandvars( os.path.join( type(self).DEFAULT_RUN_DIR, self.tag, "proc.json" ) )
+        if not os.path.isfile( proc_file ):
+            return False
+        with open( proc_file, 'r' ) as pf:
+            active_conf = json.loads( pf.read() )
+            if active_conf.get('entry') != self.entry:
+                return False
+            if active_conf.get('cwd') != self.get_working_dir():
+                return False
         return True
 
 
@@ -173,6 +183,7 @@ class Service:
             err_file = os.path.join(tag_run_dir, "err.log")
             out_file = os.path.join(tag_run_dir, "out.log")
             exit_file = os.path.join(tag_run_dir, "exit")
+            proc_file = os.path.join(tag_run_dir, "proc.json")
             f_err = open( err_file, 'a' )
             f_out = open( out_file, 'a' )
             now = datetime.datetime.utcnow().isoformat() + 'Z'
@@ -182,6 +193,13 @@ class Service:
             cmd = self.entry + "; echo $? > " + exit_file
             process = subprocess.Popen(cmd, cwd=w_dir, shell=True, stdout=f_out, stderr=f_err)
             f.write(str(process.pid))
+            with open( proc_file, 'w' ) as pf:
+                print( json.dumps({
+                    'cwd':w_dir,
+                    'cmd':cmd,
+                    'entry':self.entry,
+                    'started':now
+                    }), file=pf )
             return process.pid
 
 
