@@ -1,5 +1,5 @@
 #canvas:
-#  git: git@erik.zankt.net:canvas
+#  git: git@your.awesome-server.net:canvas
 
 #remote-control:
 #  git: https://github.com/Prause/pi-launchpad.git

@@ -11,6 +11,9 @@ On the long run, cakestack might also have kind of a "cloud mode" (now really qu
 
 For current ideas, consult your friendly TODO.md file.
 
+## dependencies
+pip3 install psutil pyyaml gitpython
+
 ## usage
 `cake start --tag your_tag`
 
