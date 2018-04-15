@@ -4,6 +4,7 @@ import os
 import datetime
 import signal
 import psutil
+import shutil
 import yaml
 import json
 import subprocess
@@ -184,14 +185,29 @@ class Service:
             out_file = os.path.join(tag_run_dir, "out.log")
             exit_file = os.path.join(tag_run_dir, "exit")
             proc_file = os.path.join(tag_run_dir, "proc.json")
-            f_err = open( err_file, 'a' )
-            f_out = open( out_file, 'a' )
             now = datetime.datetime.utcnow().isoformat() + 'Z'
-            print( "starting at " + now, file=f_out )
-            print( "starting at " + now, file=f_err )
 
             cmd = self.entry + "; echo $? > " + exit_file
-            process = subprocess.Popen(cmd, cwd=w_dir, shell=True, stdout=f_out, stderr=f_err)
+
+            out_stream = None
+            err_stream = None
+            # logger / log-rotator
+            if shutil.which('multilog'):
+                out_stream = subprocess.Popen(['multilog','t',out_file+'.d'],
+                        stdin=subprocess.PIPE).stdin
+                err_stream = subprocess.Popen(['multilog','t',err_file+'.d'],
+                        stdin=subprocess.PIPE).stdin
+            else:
+                # no rotation ...
+                out_stream = subprocess.Popen('cat >> {}'.format(out_file),
+                        shell=True,
+                        stdin=subprocess.PIPE).stdin
+                err_stream = subprocess.Popen('cat >> {}'.format(err_file),
+                        shell=True,
+                        stdin=subprocess.PIPE).stdin
+
+            # actual process spawn
+            process = subprocess.Popen(cmd, cwd=w_dir, shell=True, stdout=out_stream, stderr=err_stream)
             f.write(str(process.pid))
             with open( proc_file, 'w' ) as pf:
                 print( json.dumps({
