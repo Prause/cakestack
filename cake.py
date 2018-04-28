@@ -2,12 +2,16 @@
 
 import os
 import datetime
+import time
 import signal
 import psutil
 import shutil
 import yaml
 import json
 import subprocess
+
+def mode(filename):
+    return oct(os.stat(filename).st_mode & 0o777)[-3:]
 
 class Service:
 
@@ -106,10 +110,36 @@ class Service:
             return subprocess.Popen(self.exit, cwd=w_dir, shell=True).wait()
 
         procs = self.get_procs()
-        for p in procs:
-            p.send_signal(signal.SIGTERM)
-        return psutil.wait_procs(procs, timeout=180)
+        # kill parents first (smaller pid)
+        for p in sorted(procs, key=lambda p: p.pid):
+            try:
+                p.send_signal(signal.SIGTERM)
+            except psutil.NoSuchProcess:
+                print( "Process {} already terminated".format(p.pid) )
 
+        processes = psutil.wait_procs(procs, timeout=180)
+
+        # wait for loggin to terminate as well
+        if procs:
+            self.wait_for_logging()
+
+        return processes
+
+
+    @with_conf
+    def wait_for_logging(self, timeout=10):
+        tag_run_dir = self.create_run_dirs()
+        out_current = os.path.join(tag_run_dir, "out.log.d/current")
+        err_current = os.path.join(tag_run_dir, "err.log.d/current")
+        if shutil.which('multilog'):
+            for i in range(0,timeout):
+                out_done = not os.path.isfile(out_current) or mode(out_current) == '744'
+                err_done = not os.path.isfile(err_current) or mode(err_current) == '744'
+                if out_done and err_done:
+                    return True
+                print( "Waiting for multilog to terminate" )
+                time.sleep(1)
+        return False
 
     @with_conf
     def is_up_to_date(self):
@@ -193,9 +223,10 @@ class Service:
             err_stream = None
             # logger / log-rotator
             if shutil.which('multilog'):
-                out_stream = subprocess.Popen(['multilog','t',out_file+'.d'],
+                # FIXME multilog might not be able to open those files if a previous instance is still terminating
+                out_stream = subprocess.Popen(['multilog','t','n100','s16777215',out_file+'.d'],
                         stdin=subprocess.PIPE).stdin
-                err_stream = subprocess.Popen(['multilog','t',err_file+'.d'],
+                err_stream = subprocess.Popen(['multilog','t','n100','s16777215',err_file+'.d'],
                         stdin=subprocess.PIPE).stdin
             else:
                 # no rotation ...
