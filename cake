@@ -36,6 +36,9 @@ def state( args, conf ):
         print( tag )
         print( conf[tag] )
         print("\n".join([str((p.pid, p.status(), p.create_time(), p.cmdline())) for p in procs]))
+        if procs:
+            print('')
+
 
 
 def stop( args, conf ):
