@@ -27,6 +27,7 @@ if __name__ == "__main__":
             commit_hash = repo.head.commit.hexsha
             commit_dir = os.path.join( repo_dir, commit_hash )
             if not os.path.isdir( commit_dir ):
+                print( "Checking out {} from {} for {}".format( commit_hash, tag_conf['git'], tag ) )
                 repo.index.checkout( prefix = commit_dir + '/' )
 
             # file 'latest-rev' -> latest revision's hash , or should this be the "history" ?
