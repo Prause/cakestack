@@ -2,7 +2,7 @@
 kubernetes + jenkins for the poor, lonely and lazy
 
 ## scope
-cakestack is an ecosystem of tools that allow userland deployment & orchestration of services (todo: put deployment and orchestration in quotation marks).
+cakestack is an ecosystem of tools that allow userland "deployment" & "orchestration" of services.
 
 If you ever caught yourself running a serivce in `screen` just to keep it running in the background as your user and being able to have a look at the logs every now and then: this is for you!
 
@@ -12,7 +12,7 @@ On the long run, cakestack might also have kind of a "cloud mode" (now really qu
 For current ideas, consult your friendly TODO.md file.
 
 ## dependencies
-pip3 install psutil pyyaml gitpython
+pip3 install --user psutil pyyaml gitpython
 
 ## usage
 `cake start --tag your_tag`
@@ -30,7 +30,7 @@ See also the `example_config.yaml` file
 The config file has to reside in the `CAKESTACK_DIR`: `$HOME/.cakestack/`.
 
 ## disclaimer
-Yo, don't expect backwards compatibility. Or reliability. Or in fact anything whatsoever.
+Don't expect backwards compatibility. Or reliability. Or in fact anything whatsoever.
 
 ## license
-Whatever floats your boat. (license might change)
+MIT, because I don't know anything about licenses.

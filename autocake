@@ -3,11 +3,11 @@
 import cake
 
 if __name__ == "__main__":
-    conf = cake.Service.read_config()
-    for tag in conf.keys():
-        if "auto" in conf[tag]:
+    conf = cake.ConfigProvider.get_config()
+    for tag in conf:
+        if conf[tag].get('auto'):
             service = cake.Service(tag)
-            if not service.running():
+            if not service.is_running():
                 print("Not running, starting:", tag)
                 service.start()
             elif not service.is_up_to_date():

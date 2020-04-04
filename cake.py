@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import random
+import string
 import os
 import datetime
 import time
@@ -13,27 +15,59 @@ import subprocess
 def mode(filename):
     return oct(os.stat(filename).st_mode & 0o777)[-3:]
 
-class Service:
 
-    config_all = {} # lazy-loaded config for all services
-    DEFAULT_RUN_DIR='$HOME/.cakestack/run'
-    CAKESTACK_DIR='$HOME/.cakestack'
+def check_and_create_dir( dst ):
+    if os.path.isfile( dst ):
+        print( "Error: dir already exists and is a file", dst )
+        return False
+    if not os.path.isdir( dst ):
+        print( "creating dir", dst )
+        os.makedirs( dst )
+    return True
 
+def generate_instance_id():
+    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
 
-    def with_conf(f):
-        def helper(self, *args):
-            # TODO if not self.config ???
-            if not type(self).config_all:
-                type(self).read_config()
-            self.config = type(self).config_all[self.tag]
-            self.entry = self.config.get("entry")
-            self.dir = self.config.get("dir")
-            self.git = self.config.get("git")
-            self.exit = self.config.get("exit")
-            self.revision = self.config.get("revision")
-            return f(self, *args)
-        return helper
+class ConfigProvider:
+    config_all = None # lazy-loaded config for all services
+    instances = None
 
+    @classmethod
+    def get_instances(cls):
+        if cls.instances == None:
+            cls.instances = cls.load_instances()
+        return cls.instances
+
+    @staticmethod
+    def load_instances():
+        instances_dir = os.path.expandvars(Service.DEFAULT_INSTANCE_DIR)
+        instance_ids = [d for d in os.listdir(instances_dir) if os.path.isdir(os.path.join(instances_dir, d))]
+        instances = {}
+        for iid in instance_ids:
+            instance_dir = os.path.join( instances_dir, iid )
+            proc_file = os.path.join( instance_dir, "proc.json" )
+            if os.path.isfile(proc_file):
+                with open( proc_file, 'r' ) as f:
+                    instances[iid] = json.loads( f.read() )
+            else:
+                instances[iid] = {}
+
+            stopped_file = os.path.join( instance_dir, "stopped" )
+            if os.path.isfile(stopped_file):
+                with open( stopped_file, 'r' ) as f:
+                    instances[iid]['stopped'] = f.read().strip()
+
+            exit_file = os.path.join( instance_dir, "exit" )
+            if os.path.isfile(exit_file):
+                with open( exit_file, 'r' ) as f:
+                    instances[iid]['exit'] = f.read().strip()
+        return instances
+
+    @classmethod
+    def get_config(cls):
+        if cls.config_all == None:
+            cls.config_all = cls.read_config()
+        return cls.config_all
 
     @staticmethod
     def read_config():
@@ -41,33 +75,92 @@ class Service:
         if not os.path.isfile( conf_file ):
             print("Config file not found", conf_file)
             return {}
-        with open( conf_file ) as f:
-            Service.config_all = yaml.load( f.read() )
-        return Service.config_all
+        else:
+            print("Reading config")
+            with open( conf_file ) as f:
+                conf = yaml.load(f.read(), Loader=yaml.FullLoader) if yaml.FullLoader else yaml.load(f.read())
+                run_dir = os.path.expandvars(Service.DEFAULT_RUN_DIR)
+                for tag in conf:
+                    instance_list_file = os.path.join(run_dir, tag, "instances")
+                    if os.path.isfile( instance_list_file ):
+                        with open(instance_list_file, 'r') as f:
+                            conf[tag]['instances'] = [iid.strip() for iid in f.readlines()]
+                return conf
 
 
-    def __init__(self, tag):
+class Service:
+
+    DEFAULT_RUN_DIR='$HOME/.cakestack/run'
+    DEFAULT_INSTANCE_DIR='$HOME/.cakestack/instances'
+    CAKESTACK_DIR='$HOME/.cakestack'
+
+    def with_conf(fun):
+        def helper(self, *args):
+            if self.tag and not self.config:
+                self.config = ConfigProvider.get_config().get(self.tag, {})
+                self.entry = self.config.get("entry")
+                self.dir = self.config.get("dir")
+                self.git = self.config.get("git")
+                self.exit = self.config.get("exit")
+                self.revision = self.config.get("revision")
+                if not self.instance_id and 'instances' in self.config and len(self.config['instances']):
+                    self.instance_id = self.config['instances'][-1]
+
+            if self.instance_id:
+                self.instance_config = ConfigProvider.get_instances().get(self.instance_id, {})
+                self.cwd = self.instance_config.get('cwd')
+                self.cmd = self.instance_config.get('cmd')
+                self.started = self.instance_config.get('started')
+                if not self.tag:
+                    self.tag = self.instance_config.get('tag')
+                if not self.entry:
+                    self.entry = self.instance_config.get('entry')
+            return fun(self, *args)
+        return helper
+
+
+    def __init__(self, tag=None, instance_id=None):
         self.tag = tag
+        self.instance_id = instance_id
         self.config = {}
+        self.instance_config = {}
+        self.dir = None
+        self.git = None
+        self.exit = None
+        self.revision = None
+        self.cwd = None
+        self.cmd = None
+        self.started = None
+        self.entry = None
+
+        if tag and instance_id:
+            raise Exception("overdefined service instance")
+
+        if not tag and not instance_id:
+            self.dir = os.getcwd()
 
 
-    def get_active_dir(self):
-        # if currently running, return currently running dir, else None
-        return None
+    @with_conf
+    def load_config(self):
+        pass
 
+    def set_entry(self, entry):
+        if entry[0] == 'sudo':
+            entry = ['sudo', '-n'] + entry[1:]
+        self.entry = ' '.join(entry)
 
     @with_conf
     def get_working_dir(self):
         if self.dir:
             return os.path.expandvars(self.dir)
 
-        # for other modes, we need the tag_run_dir:
-        tag_run_dir = self.create_run_dirs()
-        if not tag_run_dir:
+        # for other modes, we need the run_dir:
+        run_dir, instance_dir = self.create_run_dirs()
+        if not run_dir:
             raise Exception( "Could not find or create working dir:", self.tag )
 
         if self.git:
-            repo_dir = os.path.join(tag_run_dir, 'repo')
+            repo_dir = os.path.join(run_dir, 'repo')
 
             commit_hash = None
             if self.revision:
@@ -86,17 +179,17 @@ class Service:
                 raise Exception( "No commit dir found, skipping:", self.tag )
             return w_dir
 
-        return tag_run_dir
+        return run_dir
 
 
-    def running(self):
+    def is_running(self):
         if self.get_root_proc():
             return True
         return False
 
 
     def start(self):
-        if not self.running():
+        if not self.is_running():
             return self.start_command()
 
 
@@ -123,14 +216,17 @@ class Service:
         if procs:
             self.wait_for_logging()
 
+        stop_file = os.path.join( self.get_instance_dir(), "stopped" )
+        with open(stop_file, 'w') as f:
+            print( datetime.datetime.utcnow().isoformat() + 'Z', file=f)
         return processes
 
 
     @with_conf
     def wait_for_logging(self, timeout=10):
-        tag_run_dir = self.create_run_dirs()
-        out_current = os.path.join(tag_run_dir, "out.log.d/current")
-        err_current = os.path.join(tag_run_dir, "err.log.d/current")
+        run_dir, instance_dir = self.create_run_dirs()
+        out_current = os.path.join(instance_dir, "out.log.d/current")
+        err_current = os.path.join(instance_dir, "err.log.d/current")
         if shutil.which('multilog'):
             for i in range(0,timeout):
                 out_done = not os.path.isfile(out_current) or mode(out_current) == '744'
@@ -144,22 +240,21 @@ class Service:
     @with_conf
     def is_up_to_date(self):
         ## checks whether currently running version is up to date with config
-        proc_file = os.path.expandvars( os.path.join( type(self).DEFAULT_RUN_DIR, self.tag, "proc.json" ) )
-        if not os.path.isfile( proc_file ):
+        if self.instance_config.get('entry') != self.entry:
             return False
-        with open( proc_file, 'r' ) as pf:
-            active_conf = json.loads( pf.read() )
-            if active_conf.get('entry') != self.entry:
-                return False
-            if active_conf.get('cwd') != self.get_working_dir():
-                return False
+        if self.instance_config.get('cwd') != self.get_working_dir():
+            return False
         return True
 
 
     def get_pid(self):
-        pid_file = os.path.expandvars( os.path.join( type(self).DEFAULT_RUN_DIR, self.tag, "pid" ) )
+        instance_dir = self.get_instance_dir()
+        if not instance_dir:
+            return
+
+        pid_file = os.path.join( instance_dir, "pid" )
         if not os.path.isfile( pid_file ):
-            print( "No pid file found for", self.tag )
+            print( "No pid file found for", self.instance_id )
             return
 
         with open( pid_file ) as f:
@@ -175,7 +270,7 @@ class Service:
         try:
             return psutil.Process(pid)
         except psutil.NoSuchProcess:
-            print( "No process found for", self.tag )
+            #print( "No process found for", self.instance_id )
             return
 
 
@@ -188,39 +283,78 @@ class Service:
         children += [parent]
         return children
 
+    def get_run_dir(self):
+        return os.path.abspath( os.path.expandvars( os.path.join( type(self).DEFAULT_RUN_DIR, self.tag ) ) )
 
-    @with_conf
-    def create_run_dirs(self):
-        tag_run_dir = os.path.abspath( os.path.expandvars( os.path.join( type(self).DEFAULT_RUN_DIR, self.tag ) ) )
-        if not check_and_create_dir( tag_run_dir ):
-            print("Error: Failed creating run dir!", tag_run_dir)
+    def get_instance_dir(self):
+        if not self.instance_id:
+            self.load_config()
+        if not self.instance_id:
             return
-        return tag_run_dir
+        return os.path.abspath( os.path.expandvars( os.path.join( type(self).DEFAULT_INSTANCE_DIR, self.instance_id ) ) )
+
+    def get_stdout_file(self):
+        return os.path.join( self.get_instance_dir(), "out.log" )
+
+    def get_stderr_file(self):
+        return os.path.join( self.get_instance_dir(), "err.log" )
+
+    def create_run_dirs(self):
+        if self.tag:
+            run_dir = self.get_run_dir()
+            if not check_and_create_dir( run_dir ):
+                print("Error: Failed creating run dir!", run_dir)
+                return
+        else:
+            run_dir = None
+
+        # FIXME
+        instance_dir = self.get_instance_dir()
+        if not check_and_create_dir( instance_dir ):
+            print("Error: Failed creating instance dir!", instance_dir)
+            return
+        return run_dir, instance_dir
 
 
     @with_conf
     def start_command(self):
         if not self.entry:
-            print( "No entry point defined:", self.tag, ", doing nothing." )
+            print( "No entry point defined: {}, doing nothing.".format(self.tag) )
             return
-        print( "starting...", self.tag )
+        print( "starting...", self.tag if self.tag else self.entry )
+
+        self.instance_id = generate_instance_id()
 
         w_dir = self.get_working_dir()
-        tag_run_dir = self.create_run_dirs()
-        if not tag_run_dir:
+        run_dir, instance_dir = self.create_run_dirs()
+        if not instance_dir:
             return
 
-        with open( os.path.join(tag_run_dir, "pid"), 'w' ) as f:
-            err_file = os.path.join(tag_run_dir, "err.log")
-            out_file = os.path.join(tag_run_dir, "out.log")
-            exit_file = os.path.join(tag_run_dir, "exit")
-            proc_file = os.path.join(tag_run_dir, "proc.json")
-            now = datetime.datetime.utcnow().isoformat() + 'Z'
+        if run_dir:
+            instance_list_file = os.path.join(run_dir, "instances")
+            with open( instance_list_file, 'a' ) as f:
+                print( self.instance_id, file=f )
 
-            cmd = self.entry + "; echo $? > " + exit_file
+        pid_file = os.path.join(instance_dir, "pid")
+        err_file = os.path.join(instance_dir, "err.log")
+        out_file = os.path.join(instance_dir, "out.log")
+        exit_file = os.path.join(instance_dir, "exit")
+        proc_file = os.path.join(instance_dir, "proc.json")
+        now = datetime.datetime.utcnow().isoformat() + 'Z'
 
-            out_stream = None
-            err_stream = None
+        cmd = self.entry + "; echo $? > " + exit_file
+
+        out_stream = None
+        err_stream = None
+
+        if not shutil.which('ts'):
+            raise Exception("require 'ts' from 'moreutils' package for time-stamping logs")
+
+        if self.entry[0:5] == "sudo ":
+            # pre-populate sudo cache
+            subprocess.run(['sudo', 'echo', 'Authorized'], check=True)
+
+        with open( pid_file, 'w' ) as f:
             # logger / log-rotator
             if shutil.which('multilog'):
                 # FIXME multilog might not be able to open those files if a previous instance is still terminating
@@ -230,10 +364,10 @@ class Service:
                         stdin=subprocess.PIPE).stdin
             else:
                 # no rotation ...
-                out_stream = subprocess.Popen('cat >> {}'.format(out_file),
+                out_stream = subprocess.Popen('ts "%FT%H:%M:%.SZ" >> {}'.format(out_file),
                         shell=True,
                         stdin=subprocess.PIPE).stdin
-                err_stream = subprocess.Popen('cat >> {}'.format(err_file),
+                err_stream = subprocess.Popen('ts "%FT%H:%M:%.SZ" >> {}'.format(err_file),
                         shell=True,
                         stdin=subprocess.PIPE).stdin
 
@@ -242,19 +376,10 @@ class Service:
             f.write(str(process.pid))
             with open( proc_file, 'w' ) as pf:
                 print( json.dumps({
+                    'tag':self.tag,
                     'cwd':w_dir,
                     'cmd':cmd,
                     'entry':self.entry,
                     'started':now
                     }), file=pf )
             return process.pid
-
-
-def check_and_create_dir( dst ):
-    if os.path.isfile( dst ):
-        print( "Error: dir already exists and is a file", dst )
-        return False
-    if not os.path.isdir( dst ):
-        print( "creating dir", dst )
-        os.makedirs( dst )
-    return True
