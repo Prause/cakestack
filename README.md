@@ -15,7 +15,9 @@ For current ideas, consult your friendly TODO.md file.
 pip3 install --user psutil pyyaml gitpython
 
 ## usage
-`cake start --tag your_tag`
+`cake start --tag your_tag` to start a user-land background task
+
+`cake logs` to view the output of running tasks
 
 ## config
 The config is in yaml format with the first level key being the service's tag and second-level keys:
